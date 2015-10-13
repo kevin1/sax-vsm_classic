@@ -46,10 +46,10 @@ public class SAXVSMClassifier {
     consoleLogger.setLevel(LOGGING_LEVEL);
   }
 
-  public static void main(String[] args) throws SAXException{
+  public static void main(String[] args) throws SAXException {
 
     try {
-      
+
       SAXVSMClassifierParams params = new SAXVSMClassifierParams();
       JCommander jct = new JCommander(params, args);
 
@@ -62,13 +62,20 @@ public class SAXVSMClassifier {
       sb.append("SAX-VSM Classifier").append(CR);
       sb.append("parameters:").append(CR);
 
-      sb.append("  train data:                  ").append(SAXVSMClassifierParams.TRAIN_FILE).append(CR);
-      sb.append("  test data:                   ").append(SAXVSMClassifierParams.TEST_FILE).append(CR);
-      sb.append("  SAX sliding window size:     ").append(SAXVSMClassifierParams.SAX_WINDOW_SIZE).append(CR);
-      sb.append("  SAX PAA size:                ").append(SAXVSMClassifierParams.SAX_PAA_SIZE).append(CR);
-      sb.append("  SAX alphabet size:           ").append(SAXVSMClassifierParams.SAX_ALPHABET_SIZE).append(CR);
-      sb.append("  SAX numerosity reduction:    ").append(SAXVSMClassifierParams.SAX_NR_STRATEGY).append(CR);
-      sb.append("  SAX normalization threshold: ").append(SAXVSMClassifierParams.SAX_NORM_THRESHOLD).append(CR);
+      sb.append("  train data:                  ").append(SAXVSMClassifierParams.TRAIN_FILE)
+          .append(CR);
+      sb.append("  test data:                   ").append(SAXVSMClassifierParams.TEST_FILE)
+          .append(CR);
+      sb.append("  SAX sliding window size:     ").append(SAXVSMClassifierParams.SAX_WINDOW_SIZE)
+          .append(CR);
+      sb.append("  SAX PAA size:                ").append(SAXVSMClassifierParams.SAX_PAA_SIZE)
+          .append(CR);
+      sb.append("  SAX alphabet size:           ").append(SAXVSMClassifierParams.SAX_ALPHABET_SIZE)
+          .append(CR);
+      sb.append("  SAX numerosity reduction:    ").append(SAXVSMClassifierParams.SAX_NR_STRATEGY)
+          .append(CR);
+      sb.append("  SAX normalization threshold: ").append(SAXVSMClassifierParams.SAX_NORM_THRESHOLD)
+          .append(CR);
 
       trainData = UCRUtils.readUCRData(SAXVSMClassifierParams.TRAIN_FILE);
       consoleLogger.info("trainData classes: " + trainData.size() + ", series length: "
@@ -100,16 +107,27 @@ public class SAXVSMClassifier {
     List<WordBag> bags = tp.labeledSeries2WordBags(trainData, params);
     // getting TFIDF done
     HashMap<String, HashMap<String, Double>> tfidf = tp.computeTFIDF(bags);
+
     // classifying
+    //
     int testSampleSize = 0;
     int positiveTestCounter = 0;
     for (String label : tfidf.keySet()) {
-      List<double[]> testD = testData.get(label);
-      for (double[] series : testD) {
-        positiveTestCounter = positiveTestCounter
-            + tp.classify(label, series, tfidf, params);
-        testSampleSize++;
+
+      if (testData.containsKey(label)) {
+
+        List<double[]> testD = testData.get(label);
+
+        if (testD.isEmpty()) {
+          continue;
+        }
+
+        for (double[] series : testD) {
+          positiveTestCounter = positiveTestCounter + tp.classify(label, series, tfidf, params);
+          testSampleSize++;
+        }
       }
+
     }
 
     // accuracy and error
