@@ -26,6 +26,9 @@ public class SAXVSMClassifierParams {
   @Parameter(names = { "--test_data", "-test" }, description = "The input file name")
   public static String TEST_FILE;
 
+  @Parameter(names = { "--num-dimensions", "-dims" }, description = "Number of dimensions in input files")
+  public static int NUM_DIMENSIONS = 1;
+
   // discretization parameters
   //
   @Parameter(names = { "--window_size", "-w" }, description = "SAX sliding window size")

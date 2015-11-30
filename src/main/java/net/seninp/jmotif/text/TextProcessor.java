@@ -638,6 +638,47 @@ public final class TextProcessor {
   // return res;
   // }
 
+  public int classify(String trueClassLabel, List<double[]> test,
+      HashMap<String, List<HashMap<String, Double>>> tfidfs, Params params) throws SAXException {
+    WordBag[] testBags = new WordBag[test.size()];
+    for (int i = 0; i < test.size(); i++) {
+      testBags[i] = seriesToWordBag("test", test.get(i), params);
+    }
+    return classify(trueClassLabel, testBags, tfidfs, params);
+  }
+
+  public int classify(String trueClassLabel, WordBag[] test,
+      HashMap<String, List<HashMap<String, Double>>> tfidfs, Params params) {
+
+    double maxDist = Double.MIN_VALUE;
+    String className = "";
+
+    Double prevDist = null;
+    boolean allEqual = true;
+
+    // For each class
+    for (Entry<String, List<HashMap<String, Double>>> e : tfidfs.entrySet()) {
+      double dist = 0.0D;
+      // For each dimension of the class
+      for (int i = 0; i < e.getValue().size(); i++) {
+        HashMap<String, Double> tfidf = e.getValue().get(i);
+        dist += cosineSimilarity(test[i], tfidf);
+      }
+
+      if (dist > maxDist) {
+        maxDist = dist;
+        className = e.getKey();
+      }
+
+      if (prevDist != null) {
+        allEqual &= (dist == prevDist);
+      }
+      prevDist = dist;
+    }
+
+    return (!allEqual && className.equalsIgnoreCase(trueClassLabel)) ? 1 : 0;
+  }
+
   public int classify(String classKey, double[] series,
       HashMap<String, HashMap<String, Double>> tfidf, Params params) throws SAXException {
 

@@ -1,7 +1,9 @@
 package net.seninp.jmotif;
 
+import java.io.IOException;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,8 +35,12 @@ public class SAXVSMClassifier {
 
   private static TextProcessor tp = new TextProcessor();
 
-  private static Map<String, List<double[]>> trainData;
-  private static Map<String, List<double[]>> testData;
+  // double[]: One dimension of a time series
+  // List<double[]>: One dimension of all time series of a class
+  // Map<String, List<double[]>>: Map of class name to 1D all TS of that class
+  // List<Map<...>>: A map for each dimension
+  private static List<Map<String, List<double[]>>> trainData = new ArrayList<>();
+  private static List<Map<String, List<double[]>>> testData = new ArrayList<>();
 
   // static block - we instantiate the logger
   //
@@ -44,6 +50,20 @@ public class SAXVSMClassifier {
   static {
     consoleLogger = (Logger) LoggerFactory.getLogger(SAXVSMClassifier.class);
     consoleLogger.setLevel(LOGGING_LEVEL);
+  }
+
+  private static void printDataStatistics(List<Map<String, List<double[]>>> data, String description) {
+    consoleLogger.info(description + " classes count: " + data.get(0).size());
+    for (Entry<String, List<double[]>> e : data.get(0).entrySet()) {
+      consoleLogger.info("  class " + e.getKey() + ", samples " + e.getValue().size());
+      for (int sampleIdx = 0; sampleIdx < e.getValue().size(); sampleIdx++) {
+        StringBuilder lengths = new StringBuilder();
+        for (int dimIdx = 0; dimIdx < data.size(); dimIdx++) {
+          lengths.append(data.get(dimIdx).get(e.getKey()).get(sampleIdx).length).append(" ");
+        }
+        consoleLogger.info("    sample dim lengths " + lengths);
+      }
+    }
   }
 
   public static void main(String[] args) throws SAXException{
@@ -64,26 +84,20 @@ public class SAXVSMClassifier {
 
       sb.append("  train data:                  ").append(SAXVSMClassifierParams.TRAIN_FILE).append(CR);
       sb.append("  test data:                   ").append(SAXVSMClassifierParams.TEST_FILE).append(CR);
+      sb.append("  num dimensions:              ").append(SAXVSMClassifierParams.NUM_DIMENSIONS).append(CR);
       sb.append("  SAX sliding window size:     ").append(SAXVSMClassifierParams.SAX_WINDOW_SIZE).append(CR);
       sb.append("  SAX PAA size:                ").append(SAXVSMClassifierParams.SAX_PAA_SIZE).append(CR);
       sb.append("  SAX alphabet size:           ").append(SAXVSMClassifierParams.SAX_ALPHABET_SIZE).append(CR);
       sb.append("  SAX numerosity reduction:    ").append(SAXVSMClassifierParams.SAX_NR_STRATEGY).append(CR);
       sb.append("  SAX normalization threshold: ").append(SAXVSMClassifierParams.SAX_NORM_THRESHOLD).append(CR);
 
-      trainData = UCRUtils.readUCRData(SAXVSMClassifierParams.TRAIN_FILE);
-      consoleLogger.info("trainData classes: " + trainData.size() + ", series length: "
-          + trainData.entrySet().iterator().next().getValue().get(0).length);
-      for (Entry<String, List<double[]>> e : trainData.entrySet()) {
-        consoleLogger.info(" training class: " + e.getKey() + " series: " + e.getValue().size());
+      for (int i = 0; i < SAXVSMClassifierParams.NUM_DIMENSIONS; i++) {
+        trainData.add(UCRUtils.readUCRData(SAXVSMClassifierParams.TRAIN_FILE + i + ".txt"));
+        testData.add(UCRUtils.readUCRData(SAXVSMClassifierParams.TEST_FILE + i + ".txt"));
       }
 
-      testData = UCRUtils.readUCRData(SAXVSMClassifierParams.TEST_FILE);
-      consoleLogger.info("testData classes: " + testData.size() + ", series length: "
-          + testData.entrySet().iterator().next().getValue().get(0).length);
-      for (Entry<String, List<double[]>> e : testData.entrySet()) {
-        consoleLogger.info(" test class: " + e.getKey() + " series: " + e.getValue().size());
-      }
-
+      printDataStatistics(trainData, "train");
+      printDataStatistics(testData, "test");
     }
     catch (Exception e) {
       System.err.println("There was an error...." + StackTrace.toString(e));
@@ -97,17 +111,41 @@ public class SAXVSMClassifier {
 
   private static void classify(Params params) throws SAXException {
     // making training bags collection
-    List<WordBag> bags = tp.labeledSeries2WordBags(trainData, params);
+    List<List<WordBag>> bags = new ArrayList<>();
+    for (Map<String, List<double[]>> dim : trainData) {
+      bags.add(tp.labeledSeries2WordBags(dim, params));
+    }
+
     // getting TFIDF done
-    HashMap<String, HashMap<String, Double>> tfidf = tp.computeTFIDF(bags);
+    HashMap<String, List<HashMap<String, Double>>> tfidfs = new HashMap<>();
+    // Iterate through all dimensions
+    for (int dimIdx = 0; dimIdx < bags.size(); dimIdx++) {
+      List<WordBag> dimBags = bags.get(dimIdx);
+      // Iterate through tfidf for each class of this dimension
+      for (Entry<String, HashMap<String, Double>> tfidf : tp.computeTFIDF(dimBags).entrySet()) {
+        if (!tfidfs.containsKey(tfidf.getKey())) {
+          List<HashMap<String, Double>> l = new ArrayList<>();
+          for (int i = 0; i < bags.size(); i++) l.add(null);
+          tfidfs.put(tfidf.getKey(), l);
+        }
+        tfidfs.get(tfidf.getKey()).set(dimIdx, tfidf.getValue());
+      }
+    }
+
     // classifying
     int testSampleSize = 0;
     int positiveTestCounter = 0;
-    for (String label : tfidf.keySet()) {
-      List<double[]> testD = testData.get(label);
-      for (double[] series : testD) {
+    // For each class
+    for (String label : tfidfs.keySet()) {
+      List<double[]> testD = testData.get(0).get(label);
+      // For each trace in this class
+      for (int i = 0; i < testD.size(); i++) {
+        List<double[]> allDims = new ArrayList<>();
+        for (int dimIdx = 0; dimIdx < testData.size(); dimIdx++) {
+          allDims.add(testData.get(dimIdx).get(label).get(i));
+        }
         positiveTestCounter = positiveTestCounter
-            + tp.classify(label, series, tfidf, params);
+            + tp.classify(label, allDims, tfidfs, params);
         testSampleSize++;
       }
     }
